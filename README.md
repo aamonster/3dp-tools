@@ -8,7 +8,9 @@ waits for SD to mount
 then writes file into print.gcode file
 (I use the only one filename because of K10 selects random file if there is more than one)
 then ejects SD-card
-TODO: maibe integrate 3dp-compensate call
+3dp-compensate called before sending to SD 
+(via temporary file, for debug you can Ctrl-C while waiting for SD -
+it will be nearby to source file with name like myfile.gcode.processed_jFsclF)
 
 ## 3dp-compensate
 Tool for post-processing G-code to compensate K10 quirks and problems
