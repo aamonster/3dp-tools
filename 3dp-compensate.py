@@ -1,19 +1,83 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK - magic string for argcomplete
+
 """
 Simple backlash compensation for Orca Slicer
 Applies offset to endpoint only for positive movements
 Adds take-up moves on direction changes
+
+Usage:
+    backlash_comp.py input.gcode [output.gcode] [--dx VALUE] [--dy VALUE]
+    
+Options:
+    --dx VALUE      X-axis backlash compensation in mm (default: 0.35)
+    --dy VALUE      Y-axis backlash compensation in mm (default: 0.35)
+    
+If output file not specified, input file will be overwritten
 """
 
+import argparse
 import math
 import re
 import sys
 
-# Backlash compensation values (positive values)
-DX = 0.35  # X-axis backlash in mm
-DY = 0.35  # Y-axis backlash in mm
+try:
+    import argcomplete
+except ImportError:
+    # Fallback if argcomplete not installed
+    argcomplete = None
 
-def process_gcode(lines):
+def parse_arguments():
+    """Parse command line arguments with argcomplete support"""
+    parser = argparse.ArgumentParser(
+        description="Apply backlash compensation to G-code files",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__
+    )
+    
+    parser.add_argument(
+        'input',
+        help='Input G-code file to process'
+    )
+    
+    parser.add_argument(
+        'output',
+        nargs='?',
+        help='Output G-code file (optional, defaults to overwriting input)'
+    )
+    
+    parser.add_argument(
+        '--dx',
+        type=float,
+        default=0.35,
+        help='X-axis backlash compensation in mm (default: 0.35)'
+    )
+    
+    parser.add_argument(
+        '--dy',
+        type=float,
+        default=0.35,
+        help='Y-axis backlash compensation in mm (default: 0.35)'
+    )
+    
+    # Enable argcomplete if available
+    if argcomplete:
+        argcomplete.autocomplete(parser)
+    
+    return parser.parse_args()
+
+def process_gcode(lines, dx, dy):
+    """
+    Apply backlash compensation to G-code lines
+    
+    Args:
+        lines: List of G-code lines
+        dx: X-axis compensation value
+        dy: Y-axis compensation value
+    
+    Returns:
+        List of processed G-code lines
+    """
     output_lines = []
     
     # State tracking - храним скомпенсированные значения
@@ -56,12 +120,15 @@ def process_gcode(lines):
             target_y = float(y_match.group(1)) if y_match else last_target_y
                         
             # Calculate deltas from original targets
-
             delta_x = target_x - last_target_x if x_match else 0
             delta_y = target_y - last_target_y if y_match else 0
 
-            dir_x = math.copysign(1, delta_x) if abs(delta_x) > 0.0001 else dir_x # сохраняем направление, если движение есть, иначе не меняем
-            dir_y = math.copysign(1, delta_y) if abs(delta_y) > 0.0001 else dir_y # сохраняем направление, если движение есть, иначе не меняем
+            # Update direction only if there's actual movement
+            # сохраняем направление, если движение есть, иначе не меняем
+            if abs(delta_x) > 0.0001:
+                dir_x = math.copysign(1, delta_x)
+            if abs(delta_y) > 0.0001:
+                dir_y = math.copysign(1, delta_y)
             
             # Calculate compensated coordinates
             comp_x = target_x
@@ -71,23 +138,23 @@ def process_gcode(lines):
             
             if dir_x > 0:
                 # Positive movement: add DX
-                comp_x += DX
-                comp_start_x += DX
+                comp_x += dx
+                comp_start_x += dx
             
             if dir_y > 0:
-                comp_y += DY
-                comp_start_y += DY
+                comp_y += dy
+                comp_start_y += dy
             
-            # Debug output
-            # output_lines.append(f"; from: ({last_target_x:.3f}, {last_target_y:.3f}) to ({target_x:.3f}, {target_y:.3f}) delta: ({delta_x:.3f}, {delta_y:.3f})")
-            # output_lines.append(f"; comp: ({comp_start_x:.3f}, {comp_start_y:.3f}) to ({comp_x:.3f}, {comp_y:.3f})")
-            # output_lines.append(f"; last_comp: ({last_comp_x:.3f}, {last_comp_y:.3f}) comp_start: ({comp_start_x:.3f}, {comp_start_y:.3f})")
-
+            # Debug output (commented out by default)
+            # output_lines.append(f"; from: ({last_target_x}, {last_target_y}) to ({target_x}, {target_y}) delta: ({delta_x}, {delta_y})")
+            # output_lines.append(f"; comp: ({comp_start_x}, {comp_start_y}) to ({comp_x}, {comp_y})")
+            # output_lines.append(f"; last_comp: ({last_comp_x}, {last_comp_y}) comp_start: ({comp_start_x}, {comp_start_y})")
 
             # Add backlash take-up moves if we have skip from last_comp to comp_start (direction changed)
-            if abs(comp_start_x - last_comp_x) > 0.0001 or abs(comp_start_y - last_comp_y) > 0.0001:
+            if (abs(comp_start_x - last_comp_x) > 0.0001 or 
+                abs(comp_start_y - last_comp_y) > 0.0001):
                 # Create take-up move without extrusion
-                take_up_cmd = f"G1 X{comp_start_x:.3f} Y{comp_start_y:.3f} ; Backlash take-up"
+                take_up_cmd = f"G1 X{comp_start_x} Y{comp_start_y} ; Backlash take-up"
                 # Add take-up lines before the compensated move
                 output_lines.append(take_up_cmd)
             
@@ -96,7 +163,7 @@ def process_gcode(lines):
                 # Positive movement: replace X coordinate
                 processed_line = re.sub(
                     r'X[-\d.]+', 
-                    f"X{comp_x:.3f}", 
+                    f"X{comp_x}", 
                     processed_line, 
                     count=1
                 )
@@ -105,7 +172,7 @@ def process_gcode(lines):
                 # Positive movement: replace Y coordinate
                 processed_line = re.sub(
                     r'Y[-\d.]+', 
-                    f"Y{comp_y:.3f}", 
+                    f"Y{comp_y}", 
                     processed_line, 
                     count=1
                 )
@@ -125,33 +192,44 @@ def process_gcode(lines):
             output_lines.append(original_line)
     
     print(f"Processed: {len(lines)} lines -> {len(output_lines)} lines")
-    print(f"Backlash compensation applied: X={DX}mm, Y={DY}mm")
+    print(f"Backlash compensation applied: X={dx}mm, Y={dy}mm")
     print(f"Compensation only for positive movements")
+    
     return output_lines
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: script.py file.gcode [output.gcode]", file=sys.stderr)
-        print("If output file not specified, input file will be overwritten", file=sys.stderr)
-        sys.exit(1)
-
-    infile = sys.argv[1]
+    """Main entry point"""
+    args = parse_arguments()
     
-    if len(sys.argv) > 2:
-        outfile = sys.argv[2]
+    # Determine output file
+    if args.output:
+        outfile = args.output
     else:
-        outfile = infile
-        print(f"Warning: Overwriting input file {infile}", file=sys.stderr)
-
-    with open(infile, "r") as f:
-        gcode_lines = f.read().splitlines()
-
-    new_lines = process_gcode(gcode_lines)
-
-    with open(outfile, "w") as f:
-        f.write("\n".join(new_lines))
+        outfile = args.input
+        print(f"Warning: Overwriting input file {args.input}", file=sys.stderr)
     
-    print(f"Output saved to: {outfile}")
+    # Read input file
+    try:
+        with open(args.input, "r") as f:
+            gcode_lines = f.read().splitlines()
+    except FileNotFoundError:
+        print(f"Error: Input file '{args.input}' not found", file=sys.stderr)
+        sys.exit(1)
+    except IOError as e:
+        print(f"Error reading file: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Process G-code with specified backlash values
+    new_lines = process_gcode(gcode_lines, args.dx, args.dy)
+    
+    # Write output file
+    try:
+        with open(outfile, "w") as f:
+            f.write("\n".join(new_lines))
+        print(f"Output saved to: {outfile}")
+    except IOError as e:
+        print(f"Error writing file: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -16,6 +16,24 @@ Currently compensates backlash in X and Y axes
 TODO: compensate Z offset (because of Orca Slicer "Z Offset" setting sometimes breaks Preview for G2/G3 codes)
 TODO: try to simulate Linear Advance
 
+To use autocomplete in zsh:
+```
+    python3 -m venv venv
+    source venv/bin/activate
+    pip3 install argcomplete
+    eval "$(register-python-argcomplete --shell zsh 3dp-compensate.py)"
+```
+Can be performed globally via pipx
+```
+brew install pipx
+pipx ensurepath
+pipx install argcomplete
+
+# install script (we need setup.py or pyproject.toml)
+# Or temporary use --break-system-packages for global installation
+pip3 install --user argcomplete --break-system-packages
+```
+
 ### backlash compensation:
 When head moves left-to-right (X++) or back-to-forward (Y++) - dx/dy added to final coordinate to compensate backlash;
 Between X++ and X-- (when head changes direction thus it have to take-up backlash) movement we add travel by DX (take-up move)
