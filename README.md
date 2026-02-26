@@ -13,6 +13,9 @@ Tool for pushing file to SD-card:
 (via temporary file, for debug you can Ctrl-C while waiting for SD –
 it will be nearby to source file with name like myfile.gcode.processed_jFsclF)
 
+TODO: if input file is m3f, not gcode – use `orca-slicer --slice 0 --export-gcode output.gcode input.3mf`
+(proposed usage path: save file in Orca and print, no gcode file remains in storage).
+
 ## 3dp-compensate
 Tool for post-processing G-code to compensate K10 quirks and problems
 - Currently compensates backlash in X and Y axes
