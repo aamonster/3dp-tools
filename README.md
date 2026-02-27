@@ -22,6 +22,31 @@ orca-slicer --input part.stl --output part.gcode \
   --preset "PETG_0.25mm" \
   --override "layer_height=0.15,line_width=0.45,infill=30"
 ```
+As an option – use 3mf-file with the same name (if exists) as template:
+```
+# Example of Python script to unpack Orca settings
+import zipfile
+import json
+import os
+
+# 1. Unpack 3MF as a ZIP
+with zipfile.ZipFile('шаблон.3mf', 'r') as z:
+    # Extract settings files
+    z.extract('Metadata/print_profile.config', 'temp/')
+    z.extract('Metadata/project_settings.config', 'temp/')
+    z.extract('Metadata/slice_info.config', 'temp/')
+
+# 2. Use settings
+os.system('''
+orca-slicer \
+  --load-settings "temp/print_profile.config;temp/project_settings.config" \
+  --load-settings "temp/slice_info.config" \
+  --arrange 1 \
+  --slice 0 \
+  --export-gcode result.gcode \
+  part.gcode
+''')
+```
 
 TODO: maybe autoconvert scad files too (`openscad -o my_design.stl my_design.scad`). Then process stl.
 - maybe I should allow to get some "--override" values from scad file. Or maybe any keys for Orca.
