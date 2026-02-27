@@ -16,6 +16,17 @@ it will be nearby to source file with name like myfile.gcode.processed_jFsclF)
 TODO: if input file is m3f, not gcode – use `orca-slicer --slice 0 --export-gcode output.gcode input.3mf`
 (proposed usage path: save file in Orca and print, no gcode file remains in storage).
 
+TODO: maybe convert stl files too. Maybe I should use keys like
+```
+orca-slicer --input part.stl --output part.gcode \
+  --preset "PETG_0.25mm" \
+  --override "layer_height=0.15,line_width=0.45,infill=30"
+```
+
+TODO: maybe autoconvert scad files too (`openscad -o my_design.stl my_design.scad`). Then process stl.
+- maybe I should allow to get some "--override" values from scad file. Or maybe any keys for Orca.
+
+
 ## 3dp-compensate
 Tool for post-processing G-code to compensate K10 quirks and problems
 - Currently compensates backlash in X and Y axes
