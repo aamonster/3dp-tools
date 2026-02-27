@@ -1,0 +1,59 @@
+; EXECUTABLE_BLOCK_START
+M73 P0 R0
+M201 X10000 Y10000 Z500 E5000
+M203 X500 Y500 Z10 E60
+M204 P10000 R1000 T10000
+M205 X8.00 Y8.00 Z0.40 E5.00 ; sets the jerk limits, mm/sec
+;TYPE:Custom
+G21 ;
+G90 ; use absolute coordinates
+M83 ; extruder relative mode
+M204 S10000 T1000
+M104 S200 ; set extruder temp
+M140 S55 ; set bed temp
+M190 S55 ; wait for bed temp
+M109 S200 ; wait for extruder temp
+G92 E0.0
+G28 X0 Y0 ; home
+G28 Z0 ; home
+G1  Z5 F1000 ; move print head up
+G90
+G21
+M83 ; use relative distances for extrusion
+; Filament gcode
+M106 S0 ; disable fan
+;LAYER_CHANGE
+;Z:0.2
+;HEIGHT:0.2
+;BEFORE_LAYER_CHANGE
+;##0.2
+G92 E0
+
+
+; squares
+G1 Z0
+G1 X40.000 Y40.000 E0
+G1 X40.000 Y60.000 E1
+G1 X60.000 Y60.000 E1
+G1 X60.000 Y40.000 E1
+
+G1 Z1
+G1 X40.000 Y40.000 E1
+G1 X40.000 Y60.000 E1
+G1 X60.000 Y60.000 E1
+G1 X60.000 Y40.000 E1
+
+; -------------------
+; rotated squares
+
+G1 Z2
+G1 X50.000 Y60.000 E0
+G1 X60.000 Y50.000 E1
+G1 X50.000 Y40.000 E1
+G1 X40.000 Y50.000 E1
+
+G1 Z0
+G1 X50.000 Y60.000 E1
+G1 X60.000 Y50.000 E1
+G1 X50.000 Y40.000 E1
+G1 X40.000 Y50.000 E1
