@@ -10,8 +10,8 @@ $0 < \tan \alpha_1 < j$, $0 < tan \alpha_2 < j$
 
 |  limit      |  limit      |L            |             |
 |-------------|-------------|-------------|-------------|
-| $-j < {h \over L} + \tan \alpha_1 < j$  | $-j - \tan \alpha_1 < {h \over L} < j - \tan \alpha_1$  |  $L > {h \over -j - tan \alpha_1}$ |  $L > {h \over j - \tan \alpha_1}$ |
-| $-j < {h \over L} - \tan \alpha_2 < j$  | $-j + \tan \alpha_2 < {h \over L} < j + \tan \alpha_2$  |  $L < {h \over \tan \alpha_2 - j}$ | $L > {h \over \tan \alpha_2 + j}$ |
+| $-j < {h \over L} + \tan \alpha_1 < j$  | $-j - \tan \alpha_1 < {h \over L} < j - \tan \alpha_1$  |  $L > {h \over -j - tan \alpha_1}$ |✅  $L > {h \over j - \tan \alpha_1}$ |
+| $-j < {h \over L} - \tan \alpha_2 < j$  | $-j + \tan \alpha_2 < {h \over L} < j + \tan \alpha_2$  |✅  $L < {h \over \tan \alpha_2 - j}$ | $L > {h \over \tan \alpha_2 + j}$ |
 
 L is divided into two parts – $L_1$ and $L_2$ for two segments.
 
