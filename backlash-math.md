@@ -13,3 +13,18 @@ $0 < \tan \alpha_1 < j$, $0 < tan \alpha_2 < j$
 | $-j < {h \over L} + \tan \alpha_1 < j$  | $-j - \tan \alpha_1 < {h \over L} < j - \tan \alpha_1$  |  $L > {h \over -j - tan \alpha_1}$ |  $L > {h \over j - \tan \alpha_1}$ |
 | $-j < {h \over L} - \tan \alpha_2 < j$  | $-j + \tan \alpha_2 < {h \over L} < j + \tan \alpha_2$  |  $L < {h \over \tan \alpha_2 - j}$ | $L > {h \over \tan \alpha_2 + j}$ |
 
+L is divided into two parts – $L_1$ and $L_2$ for two segments.
+
+$L_1 + L_2 = L$
+
+$L_1 \tan \alpha_1 = L2 \tan \alpha_2$
+
+$L_1 = { L \tan \alpha_2 \over \tan \alpha_1 + \tan \alpha_2 }, L_2 = { L \tan \alpha_1 \over \tan \alpha_1 + \tan \alpha_2 }$
+
+So offset left to $L_1$ (by line), right by $L_2$ (by line) and insert horizontal line. It will cut top
+
+$h_1 = h_2 = { L \tan \alpha_1 \cdot \tan \alpha_2 \over \tan \alpha_1 + \tan \alpha_2 }$
+
+of corner. Typical values for h = 0.35, $\tan \alpha_1 = \tan \alpha_2 = j/2$, $v=40, jerk=10$:
+
+$L = { h \over j/2 } = 2.8$, $h_1 = h_2 = h/2 = 0.175$ – basically Ok for processing circles $r<11.2$.
