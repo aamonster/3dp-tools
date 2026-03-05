@@ -20,10 +20,15 @@ import argparse
 import math
 import re
 import sys
+from itertools import islice
+
 
 # limit for applying take-up: avoid it on smooth lines
 # basically calculated as jerk/speed
 take_up_tolerance = 8/40
+
+# for searching h/v lines (to apply take-up during the line)
+horizontal_vertical_tolerance = 0.1
 
 try:
     import argcomplete
@@ -73,6 +78,102 @@ def parse_arguments():
 def format3(number):
     return f"{number:.3f}".rstrip('0').rstrip('.')
     
+def strip_comment(line):
+    """Removes comment from G-code line"""
+    comment_pos = line.find(';')
+    if comment_pos != -1:
+        return line[:comment_pos]
+    return line
+
+def get_coord(line, coord_name, default_value=0.0):
+    """
+    Extracts value from G-code line
+    """
+    # regex cache
+    if not hasattr(get_coord, '_patterns'):
+        get_coord._patterns = {}
+
+    # add pattern if not exists
+    if coord_name not in get_coord._patterns:
+        pattern_str = rf'{coord_name}([+-]?\d*\.?\d*)'
+        get_coord._patterns[coord_name] = re.compile(pattern_str)
+    
+    pattern = get_coord._patterns[coord_name]
+
+    clean_line = strip_comment(line)
+    match = pattern.search(clean_line)
+    
+    val = float(match.group(1)) if match else default_value
+    #print(f"get: {coord_name}={val} from {clean_line}, match={match}, pattern={pattern}")
+
+    
+    return float(match.group(1)) if match else default_value
+
+# wrappers
+def get_x(line, default=0.0):
+    return get_coord(line, 'X', default)
+
+def get_y(line, default=0.0):
+    return get_coord(line, 'Y', default)
+
+def get_z(line, default=0.0):
+    return get_coord(line, 'Z', default)
+
+def get_f(line, default=0.0):
+    return get_coord(line, 'F', default)
+
+def get_e(line, default=0.0):
+    return get_coord(line, 'E', default)
+
+def replace_xy(line, x=None, y=None):
+    """
+    Replace existing X/Y with new ones, insert missing ones in reverse order
+    
+    Args:
+        line: G-code line
+        x: new X value (None = keep original or don't add)
+        y: new Y value (None = keep original or don't add)
+    
+    Returns:
+        Modified G-code line
+    """
+    # Extract comment
+    line, *comment = line.split(';', 1)
+    comment = f";{comment[0]}" if comment else ''
+    
+    # Split into parts
+    parts = line.strip().split()
+    if not parts:
+        return line + comment
+    
+    new_parts = []
+    found_x = False
+    found_y = False
+    
+    # Process each part - REPLACE existing ones
+    for part in parts:
+        if part[0] == 'X' and x is not None:
+            new_parts.append(f"X{x}")
+            found_x = True
+        elif part[0] == 'Y' and y is not None:
+            new_parts.append(f"Y{y}")
+            found_y = True
+        else:
+            new_parts.append(part)
+    
+    # Insert missing ones in REVERSE order (Y then X)
+    # This ensures X comes before Y in the final result
+    insert_pos = 1  # After command
+    
+    if y is not None and not found_y:
+        new_parts.insert(insert_pos, f"Y{y}")
+        # Don't increment pos - X will be inserted before Y
+    
+    if x is not None and not found_x:
+        new_parts.insert(insert_pos, f"X{x}")
+    
+    return ' '.join(new_parts) + comment
+
 
 def process_gcode(lines, dx, dy):
     """
@@ -97,10 +198,6 @@ def process_gcode(lines, dx, dy):
     dir_x = 0  # направление последнего движения по X: -1, 0, 1
     dir_y = 0  # направление последнего движения по Y: -1, 0, 1
     
-    # Regex patterns
-    x_pattern = re.compile(r'X([-\d.]+)')
-    y_pattern = re.compile(r'Y([-\d.]+)')
-    
     for line_num, line in enumerate(lines):
         original_line = line.rstrip('\n')
         processed_line = original_line
@@ -119,17 +216,40 @@ def process_gcode(lines, dx, dy):
             original_line.startswith('G3') or
             original_line.startswith('G5')):
             
-            # Parse current line
-            x_match = x_pattern.search(original_line)
-            y_match = y_pattern.search(original_line)
-            
             # Get target coordinates from input
-            target_x = float(x_match.group(1)) if x_match else last_target_x
-            target_y = float(y_match.group(1)) if y_match else last_target_y
-                        
+            target_x = get_x(original_line, last_target_x)
+            target_y = get_y(original_line, last_target_y)
+            target_e = get_e(original_line, 0)
+            #output_lines.append(f"; x:{target_x}, y:{target_y}, e:{target_e}")
+
             # Calculate deltas from original targets
-            delta_x = target_x - last_target_x if x_match else 0
-            delta_y = target_y - last_target_y if y_match else 0
+            delta_x = target_x - last_target_x
+            delta_y = target_y - last_target_y
+
+            # skip lines without x/y movement
+            if delta_x == 0 and delta_y == 0:
+                output_lines.append(original_line)
+                continue
+
+
+            # TODO: look-ahead for horizontal/vertical lines (to take sign from next line)
+            # if abs(delta_x)=0 - it's better to take dir_x from next line
+            if abs(delta_x) < horizontal_vertical_tolerance:
+                future_lines_iterator = islice(lines, line_num + 1, None)
+                for future_line in future_lines_iterator:
+                    # take x direction, if not 0 - break
+                    # for direction calculate with the same last_target_x (go till x changes for more than horizontal_vertical_tolerance
+                    # or maybe consider current backlash direction and use horizontal_vertical_tolerance limit in one direction and dx in opposite
+                    break
+
+            # if abs(delta_x)=0 - it's better to take dir_x from next line
+            if abs(delta_y) < horizontal_vertical_tolerance:
+                future_lines_iterator = islice(lines, line_num + 1, None)
+                for future_line in future_lines_iterator:
+                    # take y direction, if not 0 - break
+                    break
+
+                    
 
             # Update direction only if there's actual movement
             # сохраняем направление, если движение есть, иначе не меняем
@@ -168,15 +288,20 @@ def process_gcode(lines, dx, dy):
                 # TODO: if possible - apply take-up at start of horizontal/vertical line, not the end (so we can use the hack too)
                 is_vertical = abs(target_x - last_target_x) <= abs(target_y - last_target_y)*take_up_tolerance
                 is_horizontal = abs(target_y - last_target_y) <= abs(target_x - last_target_x)*take_up_tolerance
+                is_print = target_e > 0
                 
-                output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
+                # output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
+                # output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal} is_print:{is_print}")
 
                 if (is_vertical):
                     take_up_x = 0
                 if (is_horizontal):
                     take_up_y = 0
+                if (not is_print):
+                    take_up_x = 0
+                    take_up_y = 0
 
-                output_lines.append(f"; done: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
+                # output_lines.append(f"; done: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
 
 
             if (abs(take_up_x) > 0.0001 or abs(take_up_y) > 0.0001):
@@ -188,33 +313,17 @@ def process_gcode(lines, dx, dy):
 
 
             # Apply compensation to the line
-            if x_match and abs(comp_x - target_x) > 0.0001:
-                # Positive movement: replace X coordinate
-                processed_line = re.sub(
-                    r'X[-\d.]+',
-                    f"X{format3(comp_x)}",
-                    processed_line,
-                    count=1
-                )
-            
-            if y_match and abs(comp_y - target_y) > 0.0001:
-                # Positive movement: replace Y coordinate
-                processed_line = re.sub(
-                    r'Y[-\d.]+', 
-                    f"Y{format3(comp_y)}",
-                    processed_line,
-                    count=1
-                )
+            if abs(comp_x - target_x) > 0.0001 or abs(comp_y - target_y) > 0.0001:
+                # Positive movement: replace X/Y coordinates
+                processed_line = replace_xy(processed_line, x=format3(comp_x), y=format3(comp_y))
             
             output_lines.append(processed_line)
             
             # Update state with COMPENSATED values
-            if x_match:
-                last_comp_x = comp_x
-                last_target_x = target_x
-            if y_match:
-                last_comp_y = comp_y
-                last_target_y = target_y
+            last_comp_x = comp_x
+            last_target_x = target_x
+            last_comp_y = comp_y
+            last_target_y = target_y
                         
         else:
             # Non-move commands pass through unchanged
