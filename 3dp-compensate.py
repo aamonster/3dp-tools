@@ -21,6 +21,10 @@ import math
 import re
 import sys
 
+# limit for applying take-up: avoid it on smooth lines
+# basically calculated as jerk/speed
+take_up_tolerance = 8/40
+
 try:
     import argcomplete
 except ImportError:
@@ -65,6 +69,10 @@ def parse_arguments():
         argcomplete.autocomplete(parser)
     
     return parser.parse_args()
+    
+def format3(number):
+    return f"{number:.3f}".rstrip('0').rstrip('.')
+    
 
 def process_gcode(lines, dx, dy):
     """
@@ -151,20 +159,41 @@ def process_gcode(lines, dx, dy):
             # output_lines.append(f"; last_comp: ({last_comp_x}, {last_comp_y}) comp_start: ({comp_start_x}, {comp_start_y})")
 
             # Add backlash take-up moves if we have skip from last_comp to comp_start (direction changed)
-            if (abs(comp_start_x - last_comp_x) > 0.0001 or 
-                abs(comp_start_y - last_comp_y) > 0.0001):
+            take_up_x = comp_start_x - last_comp_x
+            take_up_y = comp_start_y - last_comp_y
+            if (abs(take_up_x) > 0.0001 or abs(take_up_y) > 0.0001):
+                # minor hack for now: if next line is vertical or horizontal -
+                # we can ignore take-up in perpendicular direction
+                # (it will be performed inside of line)
+                # TODO: if possible - apply take-up at start of horizontal/vertical line, not the end (so we can use the hack too)
+                is_vertical = abs(target_x - last_target_x) <= abs(target_y - last_target_y)*take_up_tolerance
+                is_horizontal = abs(target_y - last_target_y) <= abs(target_x - last_target_x)*take_up_tolerance
+                
+                output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
+
+                if (is_vertical):
+                    take_up_x = 0
+                if (is_horizontal):
+                    take_up_y = 0
+
+                output_lines.append(f"; done: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
+
+
+            if (abs(take_up_x) > 0.0001 or abs(take_up_y) > 0.0001):
                 # Create take-up move without extrusion
-                take_up_cmd = f"G1 X{comp_start_x} Y{comp_start_y} ; Backlash take-up"
+                take_up_cmd = f"G1 X{format3(comp_start_x)} Y{format3(comp_start_y)} ; Backlash take-up"
                 # Add take-up lines before the compensated move
                 output_lines.append(take_up_cmd)
-            
+
+
+
             # Apply compensation to the line
             if x_match and abs(comp_x - target_x) > 0.0001:
                 # Positive movement: replace X coordinate
                 processed_line = re.sub(
-                    r'X[-\d.]+', 
-                    f"X{comp_x}", 
-                    processed_line, 
+                    r'X[-\d.]+',
+                    f"X{format3(comp_x)}",
+                    processed_line,
                     count=1
                 )
             
@@ -172,8 +201,8 @@ def process_gcode(lines, dx, dy):
                 # Positive movement: replace Y coordinate
                 processed_line = re.sub(
                     r'Y[-\d.]+', 
-                    f"Y{comp_y}", 
-                    processed_line, 
+                    f"Y{format3(comp_y)}",
+                    processed_line,
                     count=1
                 )
             
