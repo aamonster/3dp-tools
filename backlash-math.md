@@ -1,4 +1,4 @@
-Let look at the corner where we change Y direction (from top to bottom). We need Y correction (go down for h) here.
+Let's look at the corner where we change Y direction (from top to bottom). We need Y correction (go down for h) here.
 
 Before corner we go up at $\alpha_1$, after go down at $\alpha_1$ (we need $tan \alpha$ only).
 
@@ -6,18 +6,49 @@ We replace top of the corner with horizontal line of length L connecting left an
 
 $j \le {jerk \over v}$
 
-$0 < \tan \alpha_1 < j$, $0 < tan \alpha_2 < j$
+$0 < \tan \alpha_1 < j$
 
-|  limit      |  limit      |L            |             |
-|-------------|-------------|-------------|-------------|
-| $-j < {h \over L} + \tan \alpha_1 < j$  | $-j - \tan \alpha_1 < {h \over L} < j - \tan \alpha_1$  |  $L > {h \over -j - tan \alpha_1}$ |✅  $L > {h \over j - \tan \alpha_1}$ |
-| $-j < {h \over L} - \tan \alpha_2 < j$  | $-j + \tan \alpha_2 < {h \over L} < j + \tan \alpha_2$  |✅  $L < {h \over \tan \alpha_2 - j}$ | $L > {h \over \tan \alpha_2 + j}$ |
+
+$$
+-j < {h \over L} + \tan \alpha_1 < j
+$$
+
+$$
+-j < {h \over L} - \tan \alpha_2 < j
+$$
+
+thus
+
+$$
+L > {h \over j - \tan \alpha_1}
+$$
+
+$$
+\begin{cases}
+L > \dfrac{h}{j + \tan \alpha_2}, & \text{if } \tan \alpha_2 \le j, \\
+\dfrac{h}{j + \tan \alpha_2} < L < \dfrac{h}{\tan \alpha_2 - j}, & \text{if } \tan \alpha_2 > j
+\end{cases}
+$$
+
+thus
+
+$$
+L > \max \left(
+\frac{h}{j - \tan \alpha_1},
+\frac{h}{j + \tan \alpha_2}
+\right)
+$$
+
+$$
+\text{if } \tan \alpha_2 > j,\ \text{then also }
+L < \frac{h}{\tan \alpha_2 - j}
+$$
 
 L is divided into two parts – $L_1$ and $L_2$ for two segments.
 
 $L_1 + L_2 = L$
 
-$L_1 \tan \alpha_1 = L2 \tan \alpha_2$
+$L_1 \tan \alpha_1 = L_2 \tan \alpha_2$
 
 $L_1 = { L \tan \alpha_2 \over \tan \alpha_1 + \tan \alpha_2 }, L_2 = { L \tan \alpha_1 \over \tan \alpha_1 + \tan \alpha_2 }$
 
