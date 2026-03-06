@@ -284,6 +284,14 @@ def process_gcode(lines, dx, dy):
             if dir_y > 0:
                 comp_y += dy
                 comp_start_y += dy
+
+            # TODO: in case of no backlash take-up – limit comp_x/comp_y increment difference
+            # (change of x in compensated line minus change of non-compensated)
+            # with line_length*take_up_tolerance
+            # (to avoid too big direction change thus slow-down thus blob)
+            # keep track of current compensation value, update on every step, try to catch up if possible.
+            # take-up - just a shortcut to catch-up in one step with perpendicular movement, avoid it if possible
+            # (but at sharp corners it's not a problem)
             
             # Debug output (commented out by default)
             # output_lines.append(f"; from: ({last_target_x}, {last_target_y}) to ({target_x}, {target_y}) delta: ({delta_x}, {delta_y})")
