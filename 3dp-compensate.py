@@ -25,10 +25,10 @@ from itertools import islice
 
 # limit for applying take-up: avoid it on smooth lines
 # basically calculated as jerk/speed
-take_up_tolerance = 8/40
+take_up_tolerance = 8/40 # dimensionless
 
 # for searching h/v lines (to apply take-up during the line)
-horizontal_vertical_tolerance = 0.1
+horizontal_vertical_tolerance = 0.1 # mm
 
 try:
     import argcomplete
@@ -84,6 +84,15 @@ def strip_comment(line):
     if comment_pos != -1:
         return line[:comment_pos]
     return line
+    
+def is_movement(line):
+    # Only G0/G1/G2/G3/G5 moves
+    return (line.startswith('G0') or
+            line.startswith('G1') or
+            line.startswith('G2') or
+            line.startswith('G3') or
+            line.startswith('G5'))
+        
 
 def get_coord(line, coord_name, default_value=0.0):
     """
@@ -210,11 +219,7 @@ def process_gcode(lines, dx, dy):
             continue
         
         # Only process G0/G1/G2/G3/G5 moves with coordinates
-        if (original_line.startswith('G0') or 
-            original_line.startswith('G1') or
-            original_line.startswith('G2') or
-            original_line.startswith('G3') or
-            original_line.startswith('G5')):
+        if is_movement(original_line):
             
             # Get target coordinates from input
             target_x = get_x(original_line, last_target_x)
@@ -232,23 +237,30 @@ def process_gcode(lines, dx, dy):
                 continue
 
 
-            # TODO: look-ahead for horizontal/vertical lines (to take sign from next line)
+            # look-ahead for horizontal/vertical lines (to take sign from next line)
             # if abs(delta_x)=0 - it's better to take dir_x from next line
             if abs(delta_x) < horizontal_vertical_tolerance:
                 future_lines_iterator = islice(lines, line_num + 1, None)
                 for future_line in future_lines_iterator:
-                    # take x direction, if not 0 - break
-                    # for direction calculate with the same last_target_x (go till x changes for more than horizontal_vertical_tolerance
-                    # or maybe consider current backlash direction and use horizontal_vertical_tolerance limit in one direction and dx in opposite
-                    break
+                    if is_movement(future_line):
+                        # take total direction of all segments from last_target_x to current, if big enough - break
+                        # TODO: maybe consider current backlash direction and use horizontal_vertical_tolerance limit in one direction and dx in opposite
+                        future_x = get_x(future_line, last_target_x)
+                        delta_x = future_x - last_target_x # en
+                        if abs(delta_x) >= horizontal_vertical_tolerance:
+                            break
 
             # if abs(delta_x)=0 - it's better to take dir_x from next line
             if abs(delta_y) < horizontal_vertical_tolerance:
                 future_lines_iterator = islice(lines, line_num + 1, None)
                 for future_line in future_lines_iterator:
-                    # take y direction, if not 0 - break
-                    break
-
+                    if is_movement(future_line):
+                        # take total direction of all segments from last_target_y to current, if big enough - break
+                        # TODO: maybe consider current backlash direction and use horizontal_vertical_tolerance limit in one direction and dy in opposite
+                        future_y = get_y(future_line, last_target_y)
+                        delta_y = future_y - last_target_y # en
+                        if abs(delta_y) >= horizontal_vertical_tolerance:
+                            break
                     
 
             # Update direction only if there's actual movement
@@ -289,15 +301,21 @@ def process_gcode(lines, dx, dy):
                 is_vertical = abs(target_x - last_target_x) <= abs(target_y - last_target_y)*take_up_tolerance
                 is_horizontal = abs(target_y - last_target_y) <= abs(target_x - last_target_x)*take_up_tolerance
                 is_print = target_e > 0
+                is_small = abs(target_x - last_target_x) < horizontal_vertical_tolerance and abs(target_y - last_target_y) < horizontal_vertical_tolerance
+                # TODO: maybe process special case X45.3,Y54.7 -> Y45.34 => Y45.3 -> X54.7 -> Y54.7
+                # (Y decreases then minor decrease less than take-up then increase - so take-up changes direction of this minor movement to opposite)
                 
                 # output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
                 # output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal} is_print:{is_print}")
 
-                if (is_vertical):
+                if is_vertical:
                     take_up_x = 0
-                if (is_horizontal):
+                if is_horizontal:
                     take_up_y = 0
-                if (not is_print):
+                if not is_print:
+                    take_up_x = 0
+                    take_up_y = 0
+                if is_small:
                     take_up_x = 0
                     take_up_y = 0
 
