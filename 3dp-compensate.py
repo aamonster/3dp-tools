@@ -27,6 +27,8 @@ from itertools import islice
 # basically calculated as jerk/speed
 take_up_tolerance = 8/40 # dimensionless
 
+take_up_speed = 8/40 # dimensionless: how many dx compensation we can apply for length L
+
 # for searching h/v lines (to apply take-up during the line)
 horizontal_vertical_tolerance = 0.1 # mm
 
@@ -74,6 +76,14 @@ def parse_arguments():
         argcomplete.autocomplete(parser)
     
     return parser.parse_args()
+    
+def clamp(value, min_val, max_val):
+    if value < min_val:
+        return min_val
+    elif value > max_val:
+        return max_val
+    else:
+        return value
     
 def format3(number):
     return f"{number:.3f}".rstrip('0').rstrip('.')
@@ -207,6 +217,12 @@ def process_gcode(lines, dx, dy):
     dir_x = 0  # направление последнего движения по X: -1, 0, 1
     dir_y = 0  # направление последнего движения по Y: -1, 0, 1
     
+    wanted_comp_dx = 0 # wanted value for backlash compensation; current will pursue it as fast as possible in jerk/acceleration limits
+    wanted_comp_dy = 0
+    
+    current_comp_dx = 0 # it will pursue wanted_comp_dx
+    current_comp_dy = 0
+
     for line_num, line in enumerate(lines):
         original_line = line.rstrip('\n')
         processed_line = original_line
@@ -278,12 +294,39 @@ def process_gcode(lines, dx, dy):
             
             if dir_x > 0:
                 # Positive movement: add DX
-                comp_x += dx
-                comp_start_x += dx
+                wanted_comp_dx = dx
+            elif dir_x < 0:
+                wanted_comp_dx = 0
+            
             
             if dir_y > 0:
-                comp_y += dy
-                comp_start_y += dy
+                wanted_comp_dy = dx
+            elif dir_y <0:
+                wanted_comp_dy = 0
+
+            # debug: instant change
+            #current_comp_dx = wanted_comp_dx
+            #current_comp_dy = wanted_comp_dy
+            
+            # debug2: slow change
+            # current_comp_dx += (wanted_comp_dx-current_comp_dx)/4
+            # current_comp_dy += (wanted_comp_dy-current_comp_dy)/4
+
+            comp_avail = max(abs(delta_x), abs(delta_y)) * take_up_speed
+            
+            # how much we can: change not more than avail (with sign)
+            # TODO: take into account previous and current speed vectors (limits will be asymmetric)
+            current_comp_dx = clamp(wanted_comp_dx, current_comp_dx-comp_avail, current_comp_dx+comp_avail)
+            current_comp_dy = clamp(wanted_comp_dy, current_comp_dy-comp_avail, current_comp_dy+comp_avail)
+            
+            #TODO: ? if line is long(so we can catch up before it ended) – split it
+
+            comp_x += current_comp_dx
+            #comp_start_x += current_comp_dx
+            comp_start_x = last_comp_x
+            comp_y += current_comp_dy
+            #comp_start_y += current_comp_dy
+            comp_start_y = last_comp_y
 
             # TODO: do not add dx/dy here directly. Store them into wanted_comp_dx/dy instead
             # and evaluate real compensation according to path
@@ -345,7 +388,7 @@ def process_gcode(lines, dx, dy):
 
             # Apply compensation to the line
             if abs(comp_x - target_x) > 0.0001 or abs(comp_y - target_y) > 0.0001:
-                # Positive movement: replace X/Y coordinates
+                # replace X/Y coordinates
                 processed_line = replace_xy(processed_line, x=format3(comp_x), y=format3(comp_y))
             
             output_lines.append(processed_line)
