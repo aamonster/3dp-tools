@@ -285,6 +285,11 @@ def process_gcode(lines, dx, dy):
                 comp_y += dy
                 comp_start_y += dy
 
+            # TODO: do not add dx/dy here directly. Store them into wanted_comp_dx/dy instead
+            # and evaluate real compensation according to path
+            # so real compensation will change to dx/dy or 0 gradually and be added to every point
+            # take-up will set current compensation to wanted
+
             # TODO: in case of no backlash take-up – limit comp_x/comp_y increment difference
             # (change of x in compensated line minus change of non-compensated)
             # with line_length*take_up_tolerance
