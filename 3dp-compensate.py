@@ -102,7 +102,12 @@ def is_movement(line):
             line.startswith('G2') or
             line.startswith('G3') or
             line.startswith('G5'))
-        
+
+def is_linear_movement(line):
+    # Only G0/G1 moves (G2/G3/G5 need more complex processing – recalculate I, J etc)
+    return (line.startswith('G0') or
+            line.startswith('G1'))
+
 
 def get_coord(line, coord_name, default_value=0.0):
     """
@@ -208,12 +213,11 @@ def process_gcode(lines, dx, dy):
     """
     output_lines = []
     
-    # State tracking - храним скомпенсированные значения
-    last_comp_x = 0  # последняя скомпенсированная X координата
-    last_comp_y = 0  # последняя скомпенсированная Y координата
-    last_target_x = 0  # оригинальная целевая X
-    last_target_y = 0  # оригинальная целевая Y
-
+    # State tracking
+    target_x = 0
+    target_y = 0
+    delta_x = 0 # movement direction (to detect angle)
+    delta_y = 0
     dir_x = 0  # направление последнего движения по X: -1, 0, 1
     dir_y = 0  # направление последнего движения по Y: -1, 0, 1
     
@@ -236,7 +240,13 @@ def process_gcode(lines, dx, dy):
         
         # Only process G0/G1/G2/G3/G5 moves with coordinates
         if is_movement(original_line):
-            
+        
+            # State tracking - храним скомпенсированные значения
+            last_target_x = target_x
+            last_target_y = target_y
+            last_delta_x = delta_x
+            last_delta_y = delta_y
+
             # Get target coordinates from input
             target_x = get_x(original_line, last_target_x)
             target_y = get_y(original_line, last_target_y)
@@ -247,7 +257,22 @@ def process_gcode(lines, dx, dy):
             delta_x = target_x - last_target_x
             delta_y = target_y - last_target_y
 
+            # check if g-code leads to stop for changing direction. If so – we can perform take-up
+            # simple approximation – by angle presuming v=V_MAX
+            cross = delta_x * last_delta_y - delta_y * last_delta_x
+            dot = delta_x * last_delta_x + delta_y * last_delta_y
+            # cross = L1*L2*sin(angle); dot = L1*L2*cos(angle)
+            # tan(angle) = cross/dot but if dot==0 - stop for sure
+            tan_a = cross/dot if dot>1e-2 else 100
+            # printer will probably stop here so it's safe to add take-up movement
+            can_stop = tan_a>take_up_tolerance*2 # ??? should really be something more smart but...
+
+            is_linear = is_linear_movement(original_line)
+            # for cases where we cannot work without take-up (like G2, G3 – I'm too lazy to recalculate I/J so just perform take-up)
+            must_stop = not is_linear
+
             # skip lines without x/y movement
+            # TODO: if it has extrusion – maybe integrate with take-up
             if delta_x == 0 and delta_y == 0:
                 output_lines.append(original_line)
                 continue
@@ -262,7 +287,7 @@ def process_gcode(lines, dx, dy):
                         # take total direction of all segments from last_target_x to current, if big enough - break
                         # TODO: maybe consider current backlash direction and use horizontal_vertical_tolerance limit in one direction and dx in opposite
                         future_x = get_x(future_line, last_target_x)
-                        delta_x = future_x - last_target_x # en
+                        delta_x = future_x - last_target_x
                         if abs(delta_x) >= horizontal_vertical_tolerance:
                             break
 
@@ -274,7 +299,7 @@ def process_gcode(lines, dx, dy):
                         # take total direction of all segments from last_target_y to current, if big enough - break
                         # TODO: maybe consider current backlash direction and use horizontal_vertical_tolerance limit in one direction and dy in opposite
                         future_y = get_y(future_line, last_target_y)
-                        delta_y = future_y - last_target_y # en
+                        delta_y = future_y - last_target_y
                         if abs(delta_y) >= horizontal_vertical_tolerance:
                             break
                     
@@ -285,13 +310,7 @@ def process_gcode(lines, dx, dy):
                 dir_x = math.copysign(1, delta_x)
             if abs(delta_y) > 0.0001:
                 dir_y = math.copysign(1, delta_y)
-            
-            # Calculate compensated coordinates
-            comp_x = target_x
-            comp_y = target_y
-            comp_start_x = last_target_x
-            comp_start_y = last_target_y
-            
+
             if dir_x > 0:
                 # Positive movement: add DX
                 wanted_comp_dx = dx
@@ -304,13 +323,42 @@ def process_gcode(lines, dx, dy):
             elif dir_y <0:
                 wanted_comp_dy = 0
 
-            # debug: instant change
-            #current_comp_dx = wanted_comp_dx
-            #current_comp_dy = wanted_comp_dy
-            
-            # debug2: slow change
-            # current_comp_dx += (wanted_comp_dx-current_comp_dx)/4
-            # current_comp_dy += (wanted_comp_dy-current_comp_dy)/4
+            if can_stop or must_stop:
+                # Add backlash take-up moves if appropriate
+
+                take_up_x = wanted_comp_dx - current_comp_dx
+                take_up_y = wanted_comp_dy - current_comp_dy
+
+                if (abs(take_up_x) > horizontal_vertical_tolerance or abs(take_up_y) > horizontal_vertical_tolerance):
+                    # minor hack for now: if next line is vertical or horizontal -
+                    # we can ignore take-up in perpendicular direction
+                    # (it will be performed inside of line)
+                    # TODO: if possible - apply take-up at start of horizontal/vertical line, not the end (so we can use the hack too)
+                    is_vertical = is_linear and abs(target_x - last_target_x) <= abs(target_y - last_target_y)*take_up_tolerance
+                    is_horizontal = is_linear and abs(target_y - last_target_y) <= abs(target_x - last_target_x)*take_up_tolerance
+                    is_print = target_e > 0
+                    is_small = abs(target_x - last_target_x) < horizontal_vertical_tolerance and abs(target_y - last_target_y) < horizontal_vertical_tolerance
+                    # TODO: maybe process special case X45.3,Y54.7 -> Y45.34 => Y45.3 -> X54.7 -> Y54.7
+                    # (Y decreases then minor decrease less than take-up then increase - so take-up changes direction of this minor movement to opposite)
+                    
+                    if is_vertical or is_horizontal or (not is_print) or is_small:
+                        take_up_x = 0
+                        take_up_y = 0
+
+                if (abs(take_up_x) > 0.0001 or abs(take_up_y) > 0.0001):
+                    # Calculate compensated coordinates
+                    comp_start_x = last_target_x + wanted_comp_dx
+                    comp_start_y = last_target_y + wanted_comp_dy
+                    
+                    current_comp_dx = wanted_comp_dx
+                    current_comp_dy = wanted_comp_dy
+
+                    # Create take-up move without extrusion
+                    take_up_cmd = f"G1 X{format3(comp_start_x)} Y{format3(comp_start_y)} ; Backlash take-up"
+                    # Add take-up lines before the compensated move
+                    output_lines.append(take_up_cmd)
+
+            # --- take-up completed (if any), perform actual movement
 
             comp_avail = max(abs(delta_x), abs(delta_y)) * take_up_speed
             
@@ -321,71 +369,16 @@ def process_gcode(lines, dx, dy):
             
             #TODO: ? if line is long(so we can catch up before it ended) – split it
 
-            comp_x += current_comp_dx
-            #comp_start_x += current_comp_dx
-            comp_start_x = last_comp_x
-            comp_y += current_comp_dy
-            #comp_start_y += current_comp_dy
-            comp_start_y = last_comp_y
-
-            # check if g-code leads to stop for changing direction. If so – we can perform take-up
-            can_stop = False
-            must_stop = False
-            # TODO: simple approximation – by angle presuming v=V_MAX, just different limits for can_stop and must_stop
-
-            # Add backlash take-up moves if we have skip from last_comp to comp_start (direction changed)
-            take_up_x = comp_start_x - last_comp_x
-            take_up_y = comp_start_y - last_comp_y
-            if (abs(take_up_x) > 0.0001 or abs(take_up_y) > 0.0001):
-                # minor hack for now: if next line is vertical or horizontal -
-                # we can ignore take-up in perpendicular direction
-                # (it will be performed inside of line)
-                # TODO: if possible - apply take-up at start of horizontal/vertical line, not the end (so we can use the hack too)
-                is_vertical = abs(target_x - last_target_x) <= abs(target_y - last_target_y)*take_up_tolerance
-                is_horizontal = abs(target_y - last_target_y) <= abs(target_x - last_target_x)*take_up_tolerance
-                is_print = target_e > 0
-                is_small = abs(target_x - last_target_x) < horizontal_vertical_tolerance and abs(target_y - last_target_y) < horizontal_vertical_tolerance
-                # TODO: maybe process special case X45.3,Y54.7 -> Y45.34 => Y45.3 -> X54.7 -> Y54.7
-                # (Y decreases then minor decrease less than take-up then increase - so take-up changes direction of this minor movement to opposite)
-                
-                # output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
-                # output_lines.append(f"; need: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal} is_print:{is_print}")
-
-                if is_vertical:
-                    take_up_x = 0
-                if is_horizontal:
-                    take_up_y = 0
-                if not is_print:
-                    take_up_x = 0
-                    take_up_y = 0
-                if is_small:
-                    take_up_x = 0
-                    take_up_y = 0
-
-                # output_lines.append(f"; done: take_up_x:{format3(take_up_x)} take_up_y:{format3(take_up_y)} is_vertical:{is_vertical} is_horizontal:{is_horizontal}")
-
-
-            if (abs(take_up_x) > 0.0001 or abs(take_up_y) > 0.0001):
-                # Create take-up move without extrusion
-                take_up_cmd = f"G1 X{format3(comp_start_x)} Y{format3(comp_start_y)} ; Backlash take-up"
-                # Add take-up lines before the compensated move
-                output_lines.append(take_up_cmd)
-
-
-
             # Apply compensation to the line
-            if abs(comp_x - target_x) > 0.0001 or abs(comp_y - target_y) > 0.0001:
+            comp_x = target_x + current_comp_dx
+            comp_y = target_y + current_comp_dy
+
+            if abs(comp_x-target_x) > 0.0001 or abs(comp_y-target_y) > 0.0001:
                 # replace X/Y coordinates
                 processed_line = replace_xy(processed_line, x=format3(comp_x), y=format3(comp_y))
-            
+
             output_lines.append(processed_line)
             
-            # Update state with COMPENSATED values
-            last_comp_x = comp_x
-            last_target_x = target_x
-            last_comp_y = comp_y
-            last_target_y = target_y
-                        
         else:
             # Non-move commands pass through unchanged
             output_lines.append(original_line)
