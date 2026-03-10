@@ -328,23 +328,10 @@ def process_gcode(lines, dx, dy):
             #comp_start_y += current_comp_dy
             comp_start_y = last_comp_y
 
-            # TODO: do not add dx/dy here directly. Store them into wanted_comp_dx/dy instead
-            # and evaluate real compensation according to path
-            # so real compensation will change to dx/dy or 0 gradually and be added to every point
-            # take-up will set current compensation to wanted
-
-            # TODO: in case of no backlash take-up – limit comp_x/comp_y increment difference
-            # (change of x in compensated line minus change of non-compensated)
-            # with line_length*take_up_tolerance
-            # (to avoid too big direction change thus slow-down thus blob)
-            # keep track of current compensation value, update on every step, try to catch up if possible.
-            # take-up - just a shortcut to catch-up in one step with perpendicular movement, avoid it if possible
-            # (but at sharp corners it's not a problem)
-            
-            # Debug output (commented out by default)
-            # output_lines.append(f"; from: ({last_target_x}, {last_target_y}) to ({target_x}, {target_y}) delta: ({delta_x}, {delta_y})")
-            # output_lines.append(f"; comp: ({comp_start_x}, {comp_start_y}) to ({comp_x}, {comp_y})")
-            # output_lines.append(f"; last_comp: ({last_comp_x}, {last_comp_y}) comp_start: ({comp_start_x}, {comp_start_y})")
+            # check if g-code leads to stop for changing direction. If so – we can perform take-up
+            can_stop = False
+            must_stop = False
+            # TODO: simple approximation – by angle presuming v=V_MAX, just different limits for can_stop and must_stop
 
             # Add backlash take-up moves if we have skip from last_comp to comp_start (direction changed)
             take_up_x = comp_start_x - last_comp_x
