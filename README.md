@@ -83,7 +83,10 @@ pip3 install --user argcomplete --break-system-packages
 - Between X++ and X-- movement (when head changes direction thus it have to take-up backlash) we add travel by DX (take-up move)
 - The same between Y++ and Y--
 
-DX and DY calibrated for my printer - see calibration experiments caliber/readme.md, caliber/xy/test-backlash.3mf
+DX and DY calibrated for my printer:
+- Measurement: https://www.thingiverse.com/thing:2040624 - x=0.46, y=0.4
+- Measurement 2: calibrate/test-backlash.3mf (print, check for border on half of the item height - it should vanish)
+- (note for myself) see calibration experiments caliber/readme.md, caliber/xy/test-backlash.3mf
 
 Problems:
 - take-up movement is often almost perpendicular to regular movement so printer stop head - minor blob at this point
